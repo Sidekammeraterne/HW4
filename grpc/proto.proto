@@ -1,7 +1,7 @@
 syntax = "proto3";//the type of proto we use
 option go_package = "HW4/grpc/proto"; //import path
 
-message Message{
+message Client{
   int32 Id = 1;
   int32 LamportClock = 2;
 }
@@ -14,7 +14,7 @@ message Reply {
 message Empty {} //Empty is a placeholder message with no fields, used when no input is needed
 
 service RicartArgawala { //declares a gRPC service
-  rpc EnterRequest (Message) returns (Reply){};
+  rpc EnterRequest (Client) returns (Reply){};
 }
 
 /* Everytime something is changed in proto file, run the following command in the terminal:
