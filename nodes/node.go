@@ -2,22 +2,24 @@ package main
 
 import (
 	proto "ITUServer/grpc" //make connection
-	"context" //make connection - the context of the connection
-	"flag"    //command-line handling
-	"strings"
-
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-
+	"context"              //make connection - the context of the connection
+	"flag"                 //command-line handling
 	"io"
 	"log" //logs - used to keep track of messages
 	"net" //make connection to net
 	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type NodeServer struct {
 	proto.UnimplementedRicartArgawalaServer //part of the proto - we are creating an Unimplemented server
 	logFile                                 *os.File
+	Node                                    *Node //pointer to the node that in the server
 }
 
 type Node struct {
@@ -27,7 +29,7 @@ type Node struct {
 	LamportRequest int32
 	State          string
 	Queue          []*proto.Client
-	OtherNodes   map[int32]proto.RicartArgawalaClient
+	OtherNodes     map[string]proto.RicartArgawalaClient
 }
 
 type Config struct { //configuration for command-line setup, used for id and port-handling
@@ -55,43 +57,96 @@ func configurationSetup() Config {
 
 func main() {
 	configuration := configurationSetup()
-	//setup server part
-	server := &NodeServer{}
-	server.start_server(configuration.Port)
-	log.Printf("DEBUG - ID=%d Port=%s", configuration.ID, configuration.Port) //todo delete debug
+	log.Println("Configuration setup complete")
 
-	//setup the client part //todo: do for each port in 'OtherPorts' in the config
+	//setup node/client part of the server
 	clientAddress := "localhost" + configuration.Port
 	conn, err := grpc.NewClient(clientAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Not working")
 	}
-
 	client := proto.NewRicartArgawalaClient(conn)
-	//todo: save 'client' in a list with clients for 'OtherPorts'
 
 	n := Node{
-		Node: client,
-		NodeId: configuration.ID//TODO: set node id, how? given in the commandline? yes - doneee
-		Lamport: 0,
-		State:   "RELEASED",
+		Node:       client,
+		NodeId:     configuration.ID,
+		Lamport:    0,
+		State:      "RELEASED",
+		OtherNodes: make(map[string]proto.RicartArgawalaClient),
 	}
+	log.Printf("Node struct initialized")
 
-	go start_client(n)
+	//setup server part //todo: only done in go function because start_server is blocking and needed to insert wait time afterwards
+	go func() {
+		server := &NodeServer{
+			Node: &n, //pointer to the node object in the server
+		}
+		server.start_server(configuration.Port)
+		log.Printf("DEBUG - ID=%d Port=%s", configuration.ID, configuration.Port) //todo delete debug
+	}()
 
+	//wait for the server to start //todo: this does not work - if you are really fast a opening the different terminals it might work
+	log.Println("Started sleeping")
+	time.Sleep(120 * time.Second) //todo: delete only inserted for debugging
+	log.Println("Stopped sleeping")
+
+	//configure the nodes reference to the other nodes in the system
+	n.setup_nodes(configuration)
+	//starts this node
+	n.start_client()
 }
 
-func start_client(n Node) {
+func (n *Node) setup_nodes(configuration Config) {
+	//creates a client on the server for each of the other nodes in the system
+	for i := 0; i < len(configuration.OtherPorts); i++ {
+		clientAddress := "localhost" + configuration.OtherPorts[i]
+		conn, err := grpc.NewClient(clientAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			log.Printf("Not working")
+			return
+		}
+		client := proto.NewRicartArgawalaClient(conn)
+		//collects these clients in a map
+		n.OtherNodes[clientAddress] = client
+		log.Println("ADDING TO OTHER NODES", clientAddress, client)
+	}
+	log.Printf("Completed list of other nodes")
+}
+
+func (n *Node) start_client() {
+	//Todo: this introduces a race condition has all the nodes will emidiatly request access to the Critical Section
 	if n.State == "RELEASED" {
 		n.Lamport++
 		n.State = "WANTED"
-		//todo: call EnterRequest for all other clients (configured from 'OtherPorts')
-		//todo: spawn go routines for each request and wait for answer
-		response, err := n.Node.EnterRequest(context.Background(), n.getClientInfo())
-		if err != nil {
-			log.Fatalf("did not recieve anything or failed to send %v", err)
+
+		//The WaitGroup keeps track of how many go routines are running
+		wg := new(sync.WaitGroup)
+
+		//Sends enter() request to all the other nodes in the system
+		for _, other := range n.OtherNodes {
+			wg.Add(1)
+			go n.sendRequest(other, wg)
+			log.Println("SPAWNED GO ROUTINE FOR REQUEST", other)
 		}
-		//go routine der lytter svar på alle
+
+		wg.Wait()                               //waits for the go routines to terminate
+		log.Println("I GOT OKAY FROM EVERYONE") //todo: it terminates here - how do we want to control when the nodes want to enter()
+	}
+}
+
+// Makes rpc call with enter() request to the given node
+func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup) {
+	log.Printf("Sending request EnterRequest to %v", client)
+	response, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
+	if err != nil {
+		log.Printf("did not recieve anything or failed to send %v", err)
+		return
+	}
+	log.Printf("Response: %v from %v", response, client)
+	//Terminates the go routine if the response is an okay from the contacted node
+	if response.GetOkay() == "ok" {
+		defer wg.Done() //Tells the WaitGroup that this go routines is done (decrements the group with one)
+		return
 	}
 }
 
@@ -112,12 +167,8 @@ func (s *NodeServer) start_server(port string) {
 		log.Fatalf("Did not work, failed listening on port %s", port)
 	}
 
-	if err != nil {
-		log.Fatalf("Did not work")
-	}
-
+	log.Printf("[Server] listening on port %s", port)
 	err = grpcServer.Serve(listener)
-	log.Printf("[Server] listening on port", port)
 }
 
 // utility method that on message receive checks max lamport and updates local
@@ -140,7 +191,7 @@ func (s *NodeServer) setupLogging() {
 	s.logFile = logFile //saves the logfile to the client struct
 
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile)) //sets the output to both the terminal and the file
-	log.SetFlags(log.Ldate | log.Ltime) //metadata written before each log message todo: include
+	log.SetFlags(log.Ldate | log.Ltime)               //metadata written before each log message todo: include
 }
 
 /*
@@ -149,13 +200,13 @@ func (s *NodeServer) setupLogging() {
 If this node has the state "HELD", it puts the other node in a queue
 If this node has the state "WANTED"
 */
-func (s *Node) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Reply, error) {
+func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Reply, error) {
 
-	if s.State == "HELD" || s.State == "WANTED" && s.Lamport < in.LamportClock {
-		s.Queue = append(s.Queue, in)
+	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
+		s.Node.Queue = append(s.Node.Queue, in)
 
 		//go routine til når den så selv har exittet
-		go s.WaitForReleased() //slet goroutine.
+		go s.Node.WaitForReleased() //slet goroutine.
 		//return Empty
 	}
 
