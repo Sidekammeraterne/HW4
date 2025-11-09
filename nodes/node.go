@@ -55,6 +55,7 @@ func configurationSetup() Config {
 		OtherPorts: otherPortsHosts}
 }
 
+// todo: add implementation of lamport clocks everywhere
 func main() {
 	configuration := configurationSetup()
 	log.Println("Configuration setup complete")
@@ -131,6 +132,9 @@ func (n *Node) start_client() {
 
 		wg.Wait()                               //waits for the go routines to terminate
 		log.Println("I GOT OKAY FROM EVERYONE") //todo: it terminates here - how do we want to control when the nodes want to enter()
+		//todo: should then gain access to the critical section e.g. just a better version of the print statement above
+
+		//todo: at some point make an exit from the critical section and inform everyone its in the queue - I don't have a good idea for this
 	}
 }
 
