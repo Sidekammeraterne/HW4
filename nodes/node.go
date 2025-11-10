@@ -116,7 +116,8 @@ func (n *Node) setupNodes(configuration Config) {
 }
 
 func (n *Node) nodeBehavior() {
-
+	//todo: the todo below was put next to an if statement before, which has been put into choice < 7. I think it is still relevant but I am not sure.
+	//Todo: this introduces a race condition has all the nodes will emidiatly request access to the Critical Section
 	choice := rand.Intn(10) //returns a random number between 0 and 9
 	if choice < 7 {         //if the number is less than 7 (70% chance) it will enter the critical section
 		n.Lamport++
@@ -132,18 +133,17 @@ func (n *Node) nodeBehavior() {
 			log.Println("SPAWNED GO ROUTINE FOR REQUEST", other)
 		}
 
-		wg.Wait()                               //waits for the go routines to terminate
-		log.Println("I GOT OKAY FROM EVERYONE") //todo: it terminates here - how do we want to control when the nodes want to enter()
-		//todo: should then gain access to the critical section e.g. just a better version of the print statement above
+		wg.Wait() //waits for the go routines to terminate, will continue when all are done simulation ok from everyone
+		log.Printf("Node %d is entering the Critical Section\n", n.NodeId)
+		time.Sleep(5 * time.Second)
+		log.Printf("Node %d is exiting the Critical Section\n", n.NodeId)
+		n.Exit()
 
 		//todo: at some point make an exit from the critical section and inform everyone its in the queue - I don't have a good idea for this
 	} else { //if the number is 7 or higher (30% chance) it will simply sleep
 		time.Sleep(10 * time.Second) //todo: can be changed if we want something else.
 	}
-	//Todo: this introduces a race condition has all the nodes will emidiatly request access to the Critical Section
-	if n.State == "RELEASED" {
 
-	}
 }
 
 // Makes rpc call with enter() request to the given node
