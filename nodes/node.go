@@ -224,9 +224,12 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 			NodeID:       s.Node.NodeId,
 			LamportClock: s.Node.Lamport,
 		}
-		s.Node.Node.ReplyOkay(context.Background(), reply) //todo: replace Node name with something else?
+		_, err := s.Node.Node.ReplyOkay(context.Background(), reply) //todo: replace Node name with something else?
+		if err != nil {
+			log.Printf("did not recieve anything or failed to send %v", err)
+			return &proto.Empty{}, err
+		}
 	}
-
 	return &proto.Empty{}, nil
 }
 
