@@ -29,8 +29,10 @@ type Node struct {
 	Lamport        int32
 	LamportRequest int32
 	State          string
+	Address        string
 	Queue          []*proto.Client
 	OtherNodes     map[string]proto.RicartArgawalaClient
+	OkReceived     map[int32]bool
 }
 
 type Config struct { //configuration for command-line setup, used for id and port-handling
@@ -74,7 +76,9 @@ func main() {
 		NodeId:     configuration.ID,
 		Lamport:    0,
 		State:      "RELEASED",
+		Address:    clientAddress,
 		OtherNodes: make(map[string]proto.RicartArgawalaClient),
+		OkReceived: make(map[int32]bool),
 	}
 	log.Printf("Node struct initialized")
 
@@ -133,33 +137,20 @@ func (n *Node) nodeBehavior() {
 			log.Println("SPAWNED GO ROUTINE FOR REQUEST", other)
 		}
 
-		wg.Wait() //waits for the go routines to terminate, will continue when all are done simulation ok from everyone
+		wg.Wait() //waits for the go routines to terminate, will continue when all requests have been received
+
+		n.WaitForOkay() //waits for ok from all other nodes. When continuing, it means that it is allowed to enter the Critical Section
+
+		n.State = "HELD"
 		log.Printf("Node %d is entering the Critical Section\n", n.NodeId)
 		time.Sleep(5 * time.Second)
 		log.Printf("Node %d is exiting the Critical Section\n", n.NodeId)
 		n.Exit()
 
-		//todo: at some point make an exit from the critical section and inform everyone its in the queue - I don't have a good idea for this
 	} else { //if the number is 7 or higher (30% chance) it will simply sleep
 		time.Sleep(10 * time.Second) //todo: can be changed if we want something else.
 	}
 
-}
-
-// Makes rpc call with enter() request to the given node
-func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup) {
-	log.Printf("Sending request EnterRequest to %v", client)
-	response, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
-	if err != nil {
-		log.Printf("did not recieve anything or failed to send %v", err)
-		return
-	}
-	log.Printf("Response: %v from %v", response, client)
-	//Terminates the go routine if the response is an okay from the contacted node
-	if response.GetOkay() == "ok" {
-		defer wg.Done() //Tells the WaitGroup that this go routines is done (decrements the group with one)
-		return
-	}
 }
 
 func (n *Node) getClientInfo() *proto.Client {
@@ -167,6 +158,7 @@ func (n *Node) getClientInfo() *proto.Client {
 	return &proto.Client{
 		Id:           n.NodeId,
 		LamportClock: n.Lamport,
+		Address:      n.Address,
 	}
 }
 
@@ -206,35 +198,62 @@ func (s *NodeServer) setupLogging() {
 	log.SetFlags(log.Ldate | log.Ltime)               //metadata written before each log message todo: include
 }
 
+// Makes rpc call with enter() request to the given node
+func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup) {
+	log.Printf("Sending request EnterRequest to %v", client)
+	_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
+	if err != nil {
+		log.Printf("did not recieve anything or failed to send %v", err)
+		return
+	}
+	defer wg.Done() //Tells the WaitGroup that this go routines is done (decrements the group with one)
+}
+
 /*
 	function for when a node recieves a request to enter the critical section from another node
 
 If this node has the state "HELD", it puts the other node in a queue
-If this node has the state "WANTED"
+If this node has the state "WANTED" //todo: continue
 */
-func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Reply, error) {
+func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Empty, error) {
 
 	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
 		s.Node.Queue = append(s.Node.Queue, in)
-
-		//todo: dansk //go routine til når den så selv har exittet
-		go s.Node.WaitForReleased() //todo: slet goroutine.
-		//return Empty //todo: slet?
+	} else {
+		reply := &proto.Reply{
+			NodeID:       s.Node.NodeId,
+			LamportClock: s.Node.Lamport,
+		}
+		s.Node.Node.ReplyOkay(context.Background(), reply) //todo: replace Node name with something else?
 	}
 
-	return &proto.Reply{Okay: "ok"}, nil
-}
-
-// go function, keeps looks at the state until it is set to released. Then returns, which "breaks" the go runction"
-func (s *Node) WaitForReleased() {
-	if s.State == "RELEASED" {
-		return
-	}
+	return &proto.Empty{}, nil
 }
 
 // sets the state to released, which then triggers the go routine WaitForReleased to end, such that the node will reply to all requests in the queue
 func (s *Node) Exit() {
 	s.State = "RELEASED"
+	s.OkReceived = make(map[int32]bool)
+	for _, queued := range s.Queue {
+		client := s.OtherNodes[queued.Address]
+		client.ReplyOkay(context.Background(), &proto.Reply{NodeID: queued.Id, LamportClock: queued.LamportClock})
+	}
+	s.Queue = nil
+}
+
+func (s *NodeServer) ReplyOkay(ctx context.Context, in *proto.Reply) (*proto.Empty, error) {
+	s.Node.OkReceived[in.NodeID] = true
+	return &proto.Empty{}, nil
+
+}
+
+func (s *Node) WaitForOkay() {
+	for {
+		if len(s.OkReceived) == len(s.OtherNodes) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 //Make the queue: var requestQueue []string

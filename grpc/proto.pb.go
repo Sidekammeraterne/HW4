@@ -25,6 +25,7 @@ type Client struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            int32                  `protobuf:"varint,1,opt,name=Id,proto3" json:"Id,omitempty"`
 	LamportClock  int32                  `protobuf:"varint,2,opt,name=LamportClock,proto3" json:"LamportClock,omitempty"`
+	Address       string                 `protobuf:"bytes,3,opt,name=Address,proto3" json:"Address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -73,9 +74,17 @@ func (x *Client) GetLamportClock() int32 {
 	return 0
 }
 
+func (x *Client) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
 type Reply struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Okay          string                 `protobuf:"bytes,1,opt,name=Okay,proto3" json:"Okay,omitempty"`
+	NodeID        int32                  `protobuf:"varint,1,opt,name=NodeID,proto3" json:"NodeID,omitempty"`
+	LamportClock  int32                  `protobuf:"varint,2,opt,name=LamportClock,proto3" json:"LamportClock,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -110,11 +119,18 @@ func (*Reply) Descriptor() ([]byte, []int) {
 	return file_proto_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Reply) GetOkay() string {
+func (x *Reply) GetNodeID() int32 {
 	if x != nil {
-		return x.Okay
+		return x.NodeID
 	}
-	return ""
+	return 0
+}
+
+func (x *Reply) GetLamportClock() int32 {
+	if x != nil {
+		return x.LamportClock
+	}
+	return 0
 }
 
 type Empty struct {
@@ -157,15 +173,18 @@ var File_proto_proto protoreflect.FileDescriptor
 
 const file_proto_proto_rawDesc = "" +
 	"\n" +
-	"\vproto.proto\"<\n" +
+	"\vproto.proto\"V\n" +
 	"\x06Client\x12\x0e\n" +
 	"\x02Id\x18\x01 \x01(\x05R\x02Id\x12\"\n" +
-	"\fLamportClock\x18\x02 \x01(\x05R\fLamportClock\"\x1b\n" +
-	"\x05Reply\x12\x12\n" +
-	"\x04Okay\x18\x01 \x01(\tR\x04Okay\"\a\n" +
-	"\x05Empty23\n" +
+	"\fLamportClock\x18\x02 \x01(\x05R\fLamportClock\x12\x18\n" +
+	"\aAddress\x18\x03 \x01(\tR\aAddress\"C\n" +
+	"\x05Reply\x12\x16\n" +
+	"\x06NodeID\x18\x01 \x01(\x05R\x06NodeID\x12\"\n" +
+	"\fLamportClock\x18\x02 \x01(\x05R\fLamportClock\"\a\n" +
+	"\x05Empty2R\n" +
 	"\x0eRicartArgawala\x12!\n" +
-	"\fEnterRequest\x12\a.Client\x1a\x06.Reply\"\x00B\x10Z\x0eHW4/grpc/protob\x06proto3"
+	"\fEnterRequest\x12\a.Client\x1a\x06.Empty\"\x00\x12\x1d\n" +
+	"\tReplyOkay\x12\x06.Reply\x1a\x06.Empty\"\x00B\x10Z\x0eHW4/grpc/protob\x06proto3"
 
 var (
 	file_proto_proto_rawDescOnce sync.Once
@@ -187,9 +206,11 @@ var file_proto_proto_goTypes = []any{
 }
 var file_proto_proto_depIdxs = []int32{
 	0, // 0: RicartArgawala.EnterRequest:input_type -> Client
-	1, // 1: RicartArgawala.EnterRequest:output_type -> Reply
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	1, // 1: RicartArgawala.ReplyOkay:input_type -> Reply
+	2, // 2: RicartArgawala.EnterRequest:output_type -> Empty
+	2, // 3: RicartArgawala.ReplyOkay:output_type -> Empty
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
