@@ -6,6 +6,7 @@ import (
 	"flag"                 //command-line handling
 	"io"
 	"log" //logs - used to keep track of messages
+	"math/rand"
 	"net" //make connection to net
 	"os"
 	"strings"
@@ -62,7 +63,7 @@ func main() {
 
 	//setup node/client part of the server
 	clientAddress := "localhost" + configuration.Port
-	conn, err := grpc.NewClient(clientAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(clientAddress, grpc.WithTransportCredentials(insecure.NewCredentials())) //todo: jeg er måske dum men skal den lave connection til sig selv?
 	if err != nil {
 		log.Fatalf("Not working")
 	}
@@ -92,12 +93,12 @@ func main() {
 	log.Println("Stopped sleeping")
 
 	//configure the nodes reference to the other nodes in the system
-	n.setup_nodes(configuration)
+	n.setupNodes(configuration)
 	//starts this node
-	n.start_client()
+	go n.nodeBehavior()
 }
 
-func (n *Node) setup_nodes(configuration Config) {
+func (n *Node) setupNodes(configuration Config) {
 	//creates a client on the server for each of the other nodes in the system
 	for i := 0; i < len(configuration.OtherPorts); i++ {
 		clientAddress := "localhost" + configuration.OtherPorts[i]
@@ -114,9 +115,10 @@ func (n *Node) setup_nodes(configuration Config) {
 	log.Printf("Completed list of other nodes")
 }
 
-func (n *Node) start_client() {
-	//Todo: this introduces a race condition has all the nodes will emidiatly request access to the Critical Section
-	if n.State == "RELEASED" {
+func (n *Node) nodeBehavior() {
+
+	choice := rand.Intn(10) //returns a random number between 0 and 9
+	if choice < 7 {         //if the number is less than 7 (70% chance) it will enter the critical section
 		n.Lamport++
 		n.State = "WANTED"
 
@@ -135,6 +137,12 @@ func (n *Node) start_client() {
 		//todo: should then gain access to the critical section e.g. just a better version of the print statement above
 
 		//todo: at some point make an exit from the critical section and inform everyone its in the queue - I don't have a good idea for this
+	} else { //if the number is 7 or higher (30% chance) it will simply sleep
+		time.Sleep(10 * time.Second) //todo: can be changed if we want something else.
+	}
+	//Todo: this introduces a race condition has all the nodes will emidiatly request access to the Critical Section
+	if n.State == "RELEASED" {
+
 	}
 }
 
@@ -209,9 +217,9 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
 		s.Node.Queue = append(s.Node.Queue, in)
 
-		//go routine til når den så selv har exittet
-		go s.Node.WaitForReleased() //slet goroutine.
-		//return Empty
+		//todo: dansk //go routine til når den så selv har exittet
+		go s.Node.WaitForReleased() //todo: slet goroutine.
+		//return Empty //todo: slet?
 	}
 
 	return &proto.Reply{Okay: "ok"}, nil
