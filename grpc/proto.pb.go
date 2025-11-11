@@ -81,7 +81,7 @@ func (x *Client) GetAddress() string {
 	return ""
 }
 
-type Reply struct {
+type ReplyOk struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	NodeID        int32                  `protobuf:"varint,1,opt,name=NodeID,proto3" json:"NodeID,omitempty"`
 	LamportClock  int32                  `protobuf:"varint,2,opt,name=LamportClock,proto3" json:"LamportClock,omitempty"`
@@ -89,20 +89,20 @@ type Reply struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *Reply) Reset() {
-	*x = Reply{}
+func (x *ReplyOk) Reset() {
+	*x = ReplyOk{}
 	mi := &file_proto_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *Reply) String() string {
+func (x *ReplyOk) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*Reply) ProtoMessage() {}
+func (*ReplyOk) ProtoMessage() {}
 
-func (x *Reply) ProtoReflect() protoreflect.Message {
+func (x *ReplyOk) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -114,19 +114,19 @@ func (x *Reply) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use Reply.ProtoReflect.Descriptor instead.
-func (*Reply) Descriptor() ([]byte, []int) {
+// Deprecated: Use ReplyOk.ProtoReflect.Descriptor instead.
+func (*ReplyOk) Descriptor() ([]byte, []int) {
 	return file_proto_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Reply) GetNodeID() int32 {
+func (x *ReplyOk) GetNodeID() int32 {
 	if x != nil {
 		return x.NodeID
 	}
 	return 0
 }
 
-func (x *Reply) GetLamportClock() int32 {
+func (x *ReplyOk) GetLamportClock() int32 {
 	if x != nil {
 		return x.LamportClock
 	}
@@ -177,14 +177,14 @@ const file_proto_proto_rawDesc = "" +
 	"\x06Client\x12\x0e\n" +
 	"\x02Id\x18\x01 \x01(\x05R\x02Id\x12\"\n" +
 	"\fLamportClock\x18\x02 \x01(\x05R\fLamportClock\x12\x18\n" +
-	"\aAddress\x18\x03 \x01(\tR\aAddress\"C\n" +
-	"\x05Reply\x12\x16\n" +
+	"\aAddress\x18\x03 \x01(\tR\aAddress\"E\n" +
+	"\aReplyOk\x12\x16\n" +
 	"\x06NodeID\x18\x01 \x01(\x05R\x06NodeID\x12\"\n" +
 	"\fLamportClock\x18\x02 \x01(\x05R\fLamportClock\"\a\n" +
-	"\x05Empty2R\n" +
+	"\x05Empty2T\n" +
 	"\x0eRicartArgawala\x12!\n" +
-	"\fEnterRequest\x12\a.Client\x1a\x06.Empty\"\x00\x12\x1d\n" +
-	"\tReplyOkay\x12\x06.Reply\x1a\x06.Empty\"\x00B\x10Z\x0eHW4/grpc/protob\x06proto3"
+	"\fEnterRequest\x12\a.Client\x1a\x06.Empty\"\x00\x12\x1f\n" +
+	"\tReplyOkay\x12\b.ReplyOk\x1a\x06.Empty\"\x00B\x10Z\x0eHW4/grpc/protob\x06proto3"
 
 var (
 	file_proto_proto_rawDescOnce sync.Once
@@ -200,13 +200,13 @@ func file_proto_proto_rawDescGZIP() []byte {
 
 var file_proto_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
 var file_proto_proto_goTypes = []any{
-	(*Client)(nil), // 0: Client
-	(*Reply)(nil),  // 1: Reply
-	(*Empty)(nil),  // 2: Empty
+	(*Client)(nil),  // 0: Client
+	(*ReplyOk)(nil), // 1: ReplyOk
+	(*Empty)(nil),   // 2: Empty
 }
 var file_proto_proto_depIdxs = []int32{
 	0, // 0: RicartArgawala.EnterRequest:input_type -> Client
-	1, // 1: RicartArgawala.ReplyOkay:input_type -> Reply
+	1, // 1: RicartArgawala.ReplyOkay:input_type -> ReplyOk
 	2, // 2: RicartArgawala.EnterRequest:output_type -> Empty
 	2, // 3: RicartArgawala.ReplyOkay:output_type -> Empty
 	2, // [2:4] is the sub-list for method output_type

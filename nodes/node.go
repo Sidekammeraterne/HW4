@@ -203,53 +203,66 @@ func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup
 	log.Printf("Sending request EnterRequest to %v", client)
 	_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
 	if err != nil {
-		log.Printf("did not recieve anything or failed to send %v", err)
+		log.Printf("Failed to send reuquest %v", err)
 		return
 	}
 	defer wg.Done() //Tells the WaitGroup that this go routines is done (decrements the group with one)
 }
 
 /*
-	function for when a node recieves a request to enter the critical section from another node
+	Controls requests received to enter critical section.
 
-If this node has the state "HELD", it puts the other node in a queue
-If this node has the state "WANTED" //todo: continue
+If the node receiving is either in the critical section or want access and has a lower lamport clock, it will put the other one in a queue.
+Otherwise, it will reply ok.
 */
 func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Empty, error) {
 
 	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
 		s.Node.Queue = append(s.Node.Queue, in)
 	} else {
-		reply := &proto.Reply{
+		reply := &proto.ReplyOk{
 			NodeID:       s.Node.NodeId,
 			LamportClock: s.Node.Lamport,
 		}
 		_, err := s.Node.Node.ReplyOkay(context.Background(), reply) //todo: replace Node name with something else?
 		if err != nil {
-			log.Printf("did not recieve anything or failed to send %v", err)
+			log.Printf("Failed to reply okay %v", err)
 			return &proto.Empty{}, err
 		}
 	}
 	return &proto.Empty{}, nil
 }
 
-// sets the state to released, which then triggers the go routine WaitForReleased to end, such that the node will reply to all requests in the queue
+// Exit controls behavior when exiting the Critical Section.
+//Sets state to RELEASED, clears okReceived map and replies ok to all queued requests.
+//Then it clears the queue.
+
 func (s *Node) Exit() {
 	s.State = "RELEASED"
 	s.OkReceived = make(map[int32]bool)
 	for _, queued := range s.Queue {
 		client := s.OtherNodes[queued.Address]
-		client.ReplyOkay(context.Background(), &proto.Reply{NodeID: queued.Id, LamportClock: queued.LamportClock})
+		_, err := client.ReplyOkay(context.Background(), &proto.ReplyOk{NodeID: queued.Id, LamportClock: queued.LamportClock})
+		if err != nil {
+			log.Printf("Failed to reply ok from queue %v", err)
+			return
+		}
 	}
 	s.Queue = nil
 }
 
-func (s *NodeServer) ReplyOkay(ctx context.Context, in *proto.Reply) (*proto.Empty, error) {
+// ReplyOkay puts the okay received into a map to keep track of who has replied.
+// Due to it being a map, it will simply override the previous value if the node has already replied.
+// As a result, it is not possible to have multiple okays from the same node, making it possible for WaitForOkay() to control length
+func (s *NodeServer) ReplyOkay(ctx context.Context, in *proto.ReplyOk) (*proto.Empty, error) {
 	s.Node.OkReceived[in.NodeID] = true
 	return &proto.Empty{}, nil
 
 }
 
+// WaitForOkay waits for all nodes to reply okay.
+// All nodes have replied when the length of the Ok received map is equal.
+// In that case, it returns.
 func (s *Node) WaitForOkay() {
 	for {
 		if len(s.OkReceived) == len(s.OtherNodes) {

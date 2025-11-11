@@ -28,7 +28,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type RicartArgawalaClient interface {
 	EnterRequest(ctx context.Context, in *Client, opts ...grpc.CallOption) (*Empty, error)
-	ReplyOkay(ctx context.Context, in *Reply, opts ...grpc.CallOption) (*Empty, error)
+	ReplyOkay(ctx context.Context, in *ReplyOk, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type ricartArgawalaClient struct {
@@ -49,7 +49,7 @@ func (c *ricartArgawalaClient) EnterRequest(ctx context.Context, in *Client, opt
 	return out, nil
 }
 
-func (c *ricartArgawalaClient) ReplyOkay(ctx context.Context, in *Reply, opts ...grpc.CallOption) (*Empty, error) {
+func (c *ricartArgawalaClient) ReplyOkay(ctx context.Context, in *ReplyOk, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, RicartArgawala_ReplyOkay_FullMethodName, in, out, cOpts...)
@@ -64,7 +64,7 @@ func (c *ricartArgawalaClient) ReplyOkay(ctx context.Context, in *Reply, opts ..
 // for forward compatibility.
 type RicartArgawalaServer interface {
 	EnterRequest(context.Context, *Client) (*Empty, error)
-	ReplyOkay(context.Context, *Reply) (*Empty, error)
+	ReplyOkay(context.Context, *ReplyOk) (*Empty, error)
 	mustEmbedUnimplementedRicartArgawalaServer()
 }
 
@@ -78,7 +78,7 @@ type UnimplementedRicartArgawalaServer struct{}
 func (UnimplementedRicartArgawalaServer) EnterRequest(context.Context, *Client) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EnterRequest not implemented")
 }
-func (UnimplementedRicartArgawalaServer) ReplyOkay(context.Context, *Reply) (*Empty, error) {
+func (UnimplementedRicartArgawalaServer) ReplyOkay(context.Context, *ReplyOk) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReplyOkay not implemented")
 }
 func (UnimplementedRicartArgawalaServer) mustEmbedUnimplementedRicartArgawalaServer() {}
@@ -121,7 +121,7 @@ func _RicartArgawala_EnterRequest_Handler(srv interface{}, ctx context.Context, 
 }
 
 func _RicartArgawala_ReplyOkay_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Reply)
+	in := new(ReplyOk)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -133,7 +133,7 @@ func _RicartArgawala_ReplyOkay_Handler(srv interface{}, ctx context.Context, dec
 		FullMethod: RicartArgawala_ReplyOkay_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(RicartArgawalaServer).ReplyOkay(ctx, req.(*Reply))
+		return srv.(RicartArgawalaServer).ReplyOkay(ctx, req.(*ReplyOk))
 	}
 	return interceptor(ctx, in, info, handler)
 }
