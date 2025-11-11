@@ -27,7 +27,7 @@ type Node struct {
 	Node           proto.RicartArgawalaClient
 	NodeId         int32
 	Lamport        int32
-	LamportRequest int32
+	LamportRequest int32 //todo: jeg er usikker på om denne er nødvendig
 	State          string
 	Address        string
 	Queue          []*proto.Client
@@ -98,7 +98,7 @@ func main() {
 	//configure the nodes reference to the other nodes in the system
 	n.setupNodes(configuration)
 	//starts this node
-	go n.nodeBehavior()
+	go n.nodeBehavior() //todo: when should it return? Should we be able to stop it?
 }
 
 func (n *Node) setupNodes(configuration Config) {
@@ -121,32 +121,16 @@ func (n *Node) setupNodes(configuration Config) {
 func (n *Node) nodeBehavior() {
 	//todo: the todo below was put next to an if statement before, which has been put into choice < 7. I think it is still relevant but I am not sure.
 	//Todo: this introduces a race condition has all the nodes will immediately request access to the Critical Section
-	choice := rand.Intn(10) //returns a random number between 0 and 9
-	if choice < 7 {         //if the number is less than 7 (70% chance), it will enter the critical section
-		n.State = "WANTED"
-
-		//The WaitGroup keeps track of how many go routines are running
-		wg := new(sync.WaitGroup)
-
-		n.incrementLamportClock() //as it is about to send the request
-		//Sends enter() request to all the other nodes in the system
-		for _, other := range n.OtherNodes {
-			wg.Add(1)
-			go n.sendRequest(other, wg)
-			log.Println("SPAWNED GO ROUTINE FOR REQUEST", other)
+	for {
+		choice := rand.Intn(10) //returns a random number between 0 and 9
+		if choice < 7 {         //if the number is less than 7 (70% chance), it will enter the critical section
+			n.sendRequests()
+			n.EnterCriticalSection()
+			n.ExitCriticalSection()
+		} else { //if the number is 7 or higher (30% chance), it will simply sleep
+			time.Sleep(10 * time.Second)
 		}
-
-		wg.Wait() //waits for the go routines to terminate, will continue when all requests have been received
-
-		n.WaitForOkay() //waits for ok from all other nodes. When continuing, it means that it is allowed to enter the Critical Section
-
-		n.EnterCriticalSection()
-		n.ExitCriticalSection()
-
-	} else { //if the number is 7 or higher (30% chance), it will simply sleep
-		time.Sleep(10 * time.Second) //todo: can be changed if we want something else.
 	}
-
 }
 
 func (n *Node) getClientInfo() *proto.Client {
@@ -199,15 +183,33 @@ func (s *NodeServer) setupLogging() {
 	log.SetFlags(log.Ldate | log.Ltime)               //metadata written before each log message todo: include
 }
 
-// Makes rpc call with enter() request to the given node
-func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup) {
-	log.Printf("Sending request EnterRequest to %v", client)
-	_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
-	if err != nil {
-		log.Printf("Failed to send reuquest %v", err)
-		return
+// sendRequests sends a request to all the other nodes in the system, requesting access to the critical section
+func (n *Node) sendRequests() {
+	n.State = "WANTED"
+	n.incrementLamportClock() //as it is about to send the request
+
+	//The WaitGroup keeps track of how many go routines are running
+	wg := new(sync.WaitGroup)
+
+	//Sends enter() request to all the other nodes in the system
+	for _, client := range n.OtherNodes {
+		wg.Add(1)
+		//go n.sendRequest(client, wg)
+		go func(client proto.RicartArgawalaClient) {
+			defer wg.Done() //Tells the WaitGroup to decrement the group with one when the go routine is done
+			log.Printf("Sending request EnterRequest to %v", client)
+			_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
+			if err != nil {
+				log.Printf("Failed to send reuquest %v", err)
+				return
+			}
+		}(client)
+		log.Println("SPAWNED GO ROUTINE FOR REQUEST", client)
 	}
-	defer wg.Done() //Tells the WaitGroup that this go routines is done (decrements the group with one)
+
+	wg.Wait() //waits for the go routines to terminate, will continue when all requests have been received
+
+	n.WaitForOkay() //wait for ok from all other nodes. When continuing, it means that it is allowed to enter the Critical Section
 }
 
 // EnterRequest simulates behavior of node receiving an EnterRequest() by either putting the requestee in a queue or replying okay.
