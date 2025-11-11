@@ -128,7 +128,7 @@ func (n *Node) nodeBehavior() {
 		//The WaitGroup keeps track of how many go routines are running
 		wg := new(sync.WaitGroup)
 
-		n.incrementLamportClock() //increments the local lamport clock as it is about to send the request
+		n.incrementLamportClock() //as it is about to send the request
 		//Sends enter() request to all the other nodes in the system
 		for _, other := range n.OtherNodes {
 			wg.Add(1)
@@ -217,7 +217,7 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
 		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
 	} else { //replying okay
-		s.Node.incrementLamportClock() //increments the local lamport clock as it is about to reply
+		s.Node.incrementLamportClock() //as it is about to reply
 		reply := &proto.ReplyOk{
 			NodeID:       s.Node.NodeId,
 			LamportClock: s.Node.Lamport,
@@ -233,7 +233,7 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 
 // EnterCriticalSection simulates the node entering the critical section with a state change and a log print.
 func (n *Node) EnterCriticalSection() {
-	n.incrementLamportClock() //increments the local lamport clock as it is about to enter the critical section
+	n.incrementLamportClock() //as it is about to enter the critical section
 	n.State = "HELD"
 	log.Printf("Node %d is entering the Critical Section\n", n.NodeId)
 	time.Sleep(5 * time.Second)
@@ -242,12 +242,12 @@ func (n *Node) EnterCriticalSection() {
 // ExitCriticalSection simulates a node exiting the critical section with a state change and a log print.
 // It also sends a reply okay to all the nodes in the queue, then clears the queue.
 func (n *Node) ExitCriticalSection() {
-	n.incrementLamportClock() //increments the local lamport clock as it is about to exit the critical section
+	n.incrementLamportClock() //as it is about to exit the critical section
 	log.Printf("Node %d is exiting the Critical Section\n", n.NodeId)
 	n.State = "RELEASED"
 	n.OkReceived = make(map[int32]bool)
 	for _, queued := range n.Queue {
-		n.incrementLamportClock() //increments the local lamport clock as it is about to reply
+		n.incrementLamportClock() //as it is about to reply
 		client := n.OtherNodes[queued.Address]
 		_, err := client.ReplyOkay(context.Background(), &proto.ReplyOk{NodeID: queued.Id, LamportClock: queued.LamportClock})
 		if err != nil {
