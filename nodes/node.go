@@ -123,12 +123,12 @@ func (n *Node) nodeBehavior() {
 	//Todo: this introduces a race condition has all the nodes will immediately request access to the Critical Section
 	choice := rand.Intn(10) //returns a random number between 0 and 9
 	if choice < 7 {         //if the number is less than 7 (70% chance), it will enter the critical section
-		n.incrementLamportClock()
 		n.State = "WANTED"
 
 		//The WaitGroup keeps track of how many go routines are running
 		wg := new(sync.WaitGroup)
 
+		n.incrementLamportClock() //increments the local lamport clock as it is about to send the request
 		//Sends enter() request to all the other nodes in the system
 		for _, other := range n.OtherNodes {
 			wg.Add(1)
@@ -172,10 +172,11 @@ func (s *NodeServer) startServer(port string) {
 }
 
 // utility method that compares the received lamport clock with the local one and updates it if the received one is higher
-func (n *Node) compareLamportClocks(remoteLamport int32) int32 {
+func (n *Node) updateLamportOnReceive(remoteLamport int32) int32 {
 	if remoteLamport > n.Lamport {
 		n.Lamport = remoteLamport
 	}
+	n.incrementLamportClock()
 	return n.Lamport
 }
 
@@ -200,7 +201,6 @@ func (s *NodeServer) setupLogging() {
 
 // Makes rpc call with enter() request to the given node
 func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup) {
-	n.incrementLamportClock() //increments the local lamport clock before sending
 	log.Printf("Sending request EnterRequest to %v", client)
 	_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
 	if err != nil {
@@ -212,8 +212,7 @@ func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup
 
 // EnterRequest simulates behavior of node receiving an EnterRequest() by either putting the requestee in a queue or replying okay.
 func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Empty, error) {
-	s.Node.compareLamportClocks(in.LamportClock)
-	s.Node.incrementLamportClock() //increments the local lamport clock due to it receiving a message
+	s.Node.updateLamportOnReceive(in.LamportClock) //updates the local lamport clock on receiving the reply and increments it
 
 	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
 		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
@@ -248,6 +247,7 @@ func (n *Node) ExitCriticalSection() {
 	n.State = "RELEASED"
 	n.OkReceived = make(map[int32]bool)
 	for _, queued := range n.Queue {
+		n.incrementLamportClock() //increments the local lamport clock as it is about to reply
 		client := n.OtherNodes[queued.Address]
 		_, err := client.ReplyOkay(context.Background(), &proto.ReplyOk{NodeID: queued.Id, LamportClock: queued.LamportClock})
 		if err != nil {
@@ -260,8 +260,7 @@ func (n *Node) ExitCriticalSection() {
 
 // ReplyOkay handles receiving a reply okay from another node by updating the lamport clock and marking the node as having replied
 func (s *NodeServer) ReplyOkay(ctx context.Context, in *proto.ReplyOk) (*proto.Empty, error) {
-	s.Node.compareLamportClocks(in.LamportClock)
-	s.Node.incrementLamportClock() //increments the local lamport clock due to it receiving a message
+	s.Node.updateLamportOnReceive(in.LamportClock) //updates the local lamport clock on receiving the reply and increments it
 	s.Node.OkReceived[in.NodeID] = true
 	return &proto.Empty{}, nil
 
