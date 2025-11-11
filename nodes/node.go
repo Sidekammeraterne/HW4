@@ -58,7 +58,6 @@ func configurationSetup() Config {
 		OtherPorts: otherPortsHosts}
 }
 
-// todo: add implementation of lamport clocks everywhere
 func main() {
 	configuration := configurationSetup()
 	log.Println("Configuration setup complete")
@@ -87,7 +86,7 @@ func main() {
 		server := &NodeServer{
 			Node: &n, //pointer to the node object in the server
 		}
-		server.start_server(configuration.Port)
+		server.startServer(configuration.Port)
 		log.Printf("DEBUG - ID=%d Port=%s", configuration.ID, configuration.Port) //todo delete debug
 	}()
 
@@ -121,9 +120,9 @@ func (n *Node) setupNodes(configuration Config) {
 
 func (n *Node) nodeBehavior() {
 	//todo: the todo below was put next to an if statement before, which has been put into choice < 7. I think it is still relevant but I am not sure.
-	//Todo: this introduces a race condition has all the nodes will emidiatly request access to the Critical Section
+	//Todo: this introduces a race condition has all the nodes will immediately request access to the Critical Section
 	choice := rand.Intn(10) //returns a random number between 0 and 9
-	if choice < 7 {         //if the number is less than 7 (70% chance) it will enter the critical section
+	if choice < 7 {         //if the number is less than 7 (70% chance), it will enter the critical section
 		n.Lamport++
 		n.State = "WANTED"
 
@@ -141,11 +140,8 @@ func (n *Node) nodeBehavior() {
 
 		n.WaitForOkay() //waits for ok from all other nodes. When continuing, it means that it is allowed to enter the Critical Section
 
-		n.State = "HELD"
-		log.Printf("Node %d is entering the Critical Section\n", n.NodeId)
-		time.Sleep(5 * time.Second)
-		log.Printf("Node %d is exiting the Critical Section\n", n.NodeId)
-		n.Exit()
+		n.EnterCriticalSection()
+		n.ExitCriticalSection()
 
 	} else { //if the number is 7 or higher (30% chance) it will simply sleep
 		time.Sleep(10 * time.Second) //todo: can be changed if we want something else.
@@ -162,7 +158,7 @@ func (n *Node) getClientInfo() *proto.Client {
 	}
 }
 
-func (s *NodeServer) start_server(port string) {
+func (s *NodeServer) startServer(port string) {
 	grpcServer := grpc.NewServer()                    //creates new gRPC server instance
 	proto.RegisterRicartArgawalaServer(grpcServer, s) //registers the server implementation with gRPC
 
@@ -175,13 +171,17 @@ func (s *NodeServer) start_server(port string) {
 	err = grpcServer.Serve(listener)
 }
 
-// utility method that on message receive checks max lamport and updates local
-func (s *Node) updateLamportClockOnReceive(remoteLamport int32) int32 {
-	if remoteLamport > s.Lamport {
-		s.Lamport = remoteLamport
+// utility method that compares the received lamport clock with the local one and updates it if the received one is higher
+func (n *Node) compareLamportClocks(remoteLamport int32) int32 {
+	if remoteLamport > n.Lamport {
+		n.Lamport = remoteLamport
 	}
-	s.Lamport++
-	return s.Lamport
+	return n.Lamport
+}
+
+// utility method that increments the local lamport clock
+func (n *Node) incrementLamportClock() {
+	n.Lamport++
 }
 
 // sets up logging both into a file and the terminal
@@ -200,6 +200,7 @@ func (s *NodeServer) setupLogging() {
 
 // Makes rpc call with enter() request to the given node
 func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup) {
+	n.incrementLamportClock() //increments the local lamport clock before sending
 	log.Printf("Sending request EnterRequest to %v", client)
 	_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
 	if err != nil {
@@ -209,17 +210,15 @@ func (n *Node) sendRequest(client proto.RicartArgawalaClient, wg *sync.WaitGroup
 	defer wg.Done() //Tells the WaitGroup that this go routines is done (decrements the group with one)
 }
 
-/*
-	Controls requests received to enter critical section.
-
-If the node receiving is either in the critical section or want access and has a lower lamport clock, it will put the other one in a queue.
-Otherwise, it will reply ok.
-*/
+// EnterRequest simulates behavior of node receiving an EnterRequest() by either putting the requestee in a queue or replying okay.
 func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Empty, error) {
+	s.Node.compareLamportClocks(in.LamportClock)
+	s.Node.incrementLamportClock() //increments the local lamport clock due to it receiving a message
 
 	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
-		s.Node.Queue = append(s.Node.Queue, in)
-	} else {
+		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
+	} else { //replying okay
+		s.Node.incrementLamportClock() //increments the local lamport clock as it is about to reply
 		reply := &proto.ReplyOk{
 			NodeID:       s.Node.NodeId,
 			LamportClock: s.Node.Lamport,
@@ -233,45 +232,47 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 	return &proto.Empty{}, nil
 }
 
-// Exit controls behavior when exiting the Critical Section.
-//Sets state to RELEASED, clears okReceived map and replies ok to all queued requests.
-//Then it clears the queue.
+// EnterCriticalSection simulates the node entering the critical section with a state change and a log print.
+func (n *Node) EnterCriticalSection() {
+	n.incrementLamportClock() //increments the local lamport clock as it is about to enter the critical section
+	n.State = "HELD"
+	log.Printf("Node %d is entering the Critical Section\n", n.NodeId)
+	time.Sleep(5 * time.Second)
+}
 
-func (s *Node) Exit() {
-	s.State = "RELEASED"
-	s.OkReceived = make(map[int32]bool)
-	for _, queued := range s.Queue {
-		client := s.OtherNodes[queued.Address]
+// ExitCriticalSection simulates a node exiting the critical section with a state change and a log print.
+// It also sends a reply okay to all the nodes in the queue, then clears the queue.
+func (n *Node) ExitCriticalSection() {
+	n.incrementLamportClock() //increments the local lamport clock as it is about to exit the critical section
+	log.Printf("Node %d is exiting the Critical Section\n", n.NodeId)
+	n.State = "RELEASED"
+	n.OkReceived = make(map[int32]bool)
+	for _, queued := range n.Queue {
+		client := n.OtherNodes[queued.Address]
 		_, err := client.ReplyOkay(context.Background(), &proto.ReplyOk{NodeID: queued.Id, LamportClock: queued.LamportClock})
 		if err != nil {
 			log.Printf("Failed to reply ok from queue %v", err)
 			return
 		}
 	}
-	s.Queue = nil
+	n.Queue = nil //clears the queue as it should be empty after replying to all nodes on it.
 }
 
-// ReplyOkay puts the okay received into a map to keep track of who has replied.
-// Due to it being a map, it will simply override the previous value if the node has already replied.
-// As a result, it is not possible to have multiple okays from the same node, making it possible for WaitForOkay() to control length
+// ReplyOkay handles receiving a reply okay from another node by updating the lamport clock and marking the node as having replied
 func (s *NodeServer) ReplyOkay(ctx context.Context, in *proto.ReplyOk) (*proto.Empty, error) {
+	s.Node.compareLamportClocks(in.LamportClock)
+	s.Node.incrementLamportClock() //increments the local lamport clock due to it receiving a message
 	s.Node.OkReceived[in.NodeID] = true
 	return &proto.Empty{}, nil
 
 }
 
-// WaitForOkay waits for all nodes to reply okay.
-// All nodes have replied when the length of the Ok received map is equal.
-// In that case, it returns.
-func (s *Node) WaitForOkay() {
+// WaitForOkay waits for all nodes to reply okay, then returns
+func (n *Node) WaitForOkay() {
 	for {
-		if len(s.OkReceived) == len(s.OtherNodes) {
+		if len(n.OkReceived) == len(n.OtherNodes) { //if all nodes have replied, the OkReceived map will have the same length as the OtherNodes map
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
-
-//Make the queue: var requestQueue []string
-//Queue: requestQueue = append(requestQueue, request)
-//Dequeue: requestQueue = requestQueue[1:] //dequeue
