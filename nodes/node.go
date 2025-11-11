@@ -60,6 +60,8 @@ func configurationSetup() Config {
 
 func main() {
 	configuration := configurationSetup()
+	firstLogging := configuration.ID == 1 //todo. make sure first node has id 1
+	setupLogging(firstLogging)
 	log.Println("Configuration setup complete")
 
 	//setup node/client part of the server
@@ -169,15 +171,19 @@ func (n *Node) incrementLamportClock() {
 	n.Lamport++
 }
 
-// sets up logging both into a file and the terminal //todo: implement
-func (s *NodeServer) setupLogging() {
+// sets up logging both into a file and the terminal
+func setupLogging(firstTime bool) {
+	var logType int
+	if firstTime {
+		logType = os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+	} else {
+		logType = os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	}
 	//creates the file (or overwrites it if it already exists)
-	logFile, err := os.OpenFile("logFile.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
+	logFile, err := os.OpenFile("logFile.log", logType, 0666)
 	if err != nil {
 		log.Fatalf("failed to create log file: %v", err)
 	}
-
-	s.logFile = logFile //saves the logfile to the client struct
 
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile)) //sets the output to both the terminal and the file
 	log.SetFlags(log.Ldate | log.Ltime)               //metadata written before each log message todo: include
