@@ -123,7 +123,7 @@ func (n *Node) nodeBehavior() {
 	//Todo: this introduces a race condition has all the nodes will immediately request access to the Critical Section
 	choice := rand.Intn(10) //returns a random number between 0 and 9
 	if choice < 7 {         //if the number is less than 7 (70% chance), it will enter the critical section
-		n.Lamport++
+		n.incrementLamportClock()
 		n.State = "WANTED"
 
 		//The WaitGroup keeps track of how many go routines are running
@@ -143,7 +143,7 @@ func (n *Node) nodeBehavior() {
 		n.EnterCriticalSection()
 		n.ExitCriticalSection()
 
-	} else { //if the number is 7 or higher (30% chance) it will simply sleep
+	} else { //if the number is 7 or higher (30% chance), it will simply sleep
 		time.Sleep(10 * time.Second) //todo: can be changed if we want something else.
 	}
 
@@ -184,7 +184,7 @@ func (n *Node) incrementLamportClock() {
 	n.Lamport++
 }
 
-// sets up logging both into a file and the terminal
+// sets up logging both into a file and the terminal //todo: implement
 func (s *NodeServer) setupLogging() {
 	//creates the file (or overwrites it if it already exists)
 	logFile, err := os.OpenFile("logFile.log", os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0666)
