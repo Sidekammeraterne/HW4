@@ -80,7 +80,9 @@ func main() {
 		OtherNodes: make(map[string]proto.RicartArgawalaClient),
 		OkReceived: make(map[int32]bool),
 	}
-	log.Printf("Node struct initialized")
+	log.Printf("Node struct initialized for node %d, address %s", n.NodeId, n.Address)
+
+	n.setupNodes(configuration)
 
 	//setup server part //todo: only done in go function because start_server is blocking and needed to insert wait time afterwards
 	go func() {
@@ -94,7 +96,7 @@ func main() {
 	time.Sleep(60 * time.Second)
 
 	//configure the nodes reference to the other nodes in the system
-	n.setupNodes(configuration)
+	//n.setupNodes(configuration)
 	//starts this node
 	n.nodeBehavior()
 
