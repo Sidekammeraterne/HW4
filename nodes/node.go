@@ -232,7 +232,7 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 		}
 		var replyclient = s.Node.OtherNodes[in.Address]
 		_, err := replyclient.ReplyOkay(context.Background(), reply)
-		log.Printf("Sent ReplyOkay to %v as their Lamport (%v) is lower than mine (%v)", in.Id, in.LamportClock, s.Node.LamportRequest)
+		log.Printf("Sent ReplyOkay to %v as I am no eligible", in.Id)
 		if err != nil {
 			log.Printf("Failed to reply okay %v", err)
 			return &proto.Empty{}, err
