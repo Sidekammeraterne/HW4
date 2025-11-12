@@ -27,7 +27,7 @@ type Node struct {
 	Node           proto.RicartArgawalaClient
 	NodeId         int32
 	Lamport        int32
-	LamportRequest int32 //todo: jeg er usikker på om denne er nødvendig
+	LamportRequest int32
 	State          string
 	Address        string
 	Queue          []*proto.Client
@@ -139,7 +139,7 @@ func (n *Node) getClientInfo() *proto.Client {
 	n.LamportRequest = n.Lamport
 	return &proto.Client{
 		Id:           n.NodeId,
-		LamportClock: n.Lamport,
+		LamportClock: n.LamportRequest,
 		Address:      n.Address,
 	}
 }
@@ -193,6 +193,7 @@ func setupLogging(firstTime bool) {
 func (n *Node) sendRequests() {
 	n.State = "WANTED"
 	n.incrementLamportClock() //as it is about to send the request
+	n.LamportRequest = n.Lamport
 
 	//The WaitGroup keeps track of how many go routines are running
 	wg := new(sync.WaitGroup)
@@ -222,9 +223,12 @@ func (n *Node) sendRequests() {
 func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Empty, error) {
 	s.Node.updateLamportOnReceive(in.LamportClock) //updates the local lamport clock on receiving the reply and increments it
 
-	if s.Node.State == "HELD" || s.Node.State == "WANTED" && s.Node.Lamport < in.LamportClock { //todo: handle if the lamport clocks are the same e.g. the one with the lowest ID comes first
+	switch {
+	case s.Node.State == "HELD":
 		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
-	} else { //replying okay
+	case s.Node.State == "WANTED" && (s.Node.LamportRequest < in.LamportClock || s.Node.LamportRequest == in.LamportClock && s.Node.NodeId < in.Id):
+		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
+	default:
 		s.Node.incrementLamportClock() //as it is about to reply
 		reply := &proto.ReplyOk{
 			NodeID:       s.Node.NodeId,
