@@ -65,7 +65,7 @@ func main() {
 
 	//setup node/client part of the server
 	clientAddress := "localhost" + configuration.Port
-	conn, err := grpc.NewClient(clientAddress, grpc.WithTransportCredentials(insecure.NewCredentials())) //todo: jeg er måske dum men skal den lave connection til sig selv?
+	conn, err := grpc.NewClient(clientAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Not working")
 	}
@@ -84,7 +84,7 @@ func main() {
 
 	n.setupNodes(configuration)
 
-	//setup server part //todo: only done in go function because start_server is blocking and needed to insert wait time afterwards
+	//setup server part
 	go func() {
 		server := &NodeServer{
 			Node: &n, //pointer to the node object in the server
@@ -120,8 +120,6 @@ func (n *Node) setupNodes(configuration Config) {
 }
 
 func (n *Node) nodeBehavior() {
-	//todo: the todo below was put next to an if statement before, which has been put into choice < 7. I think it is still relevant but I am not sure.
-	//Todo: this introduces a race condition has all the nodes will immediately request access to the Critical Section
 	for {
 		choice := rand.Intn(10) //returns a random number between 0 and 9
 		if choice < 7 {         //if the number is less than 7 (70% chance), it will enter the critical section
@@ -186,7 +184,7 @@ func setupLogging(firstTime bool) {
 	}
 
 	log.SetOutput(io.MultiWriter(os.Stdout, logFile)) //sets the output to both the terminal and the file
-	log.SetFlags(log.Ldate | log.Ltime)               //metadata written before each log message todo: include
+	log.SetFlags(log.Ldate | log.Ltime)               //metadata written before each log message
 }
 
 // sendRequests sends a request to all the other nodes in the system, requesting access to the critical section
@@ -206,7 +204,6 @@ func (n *Node) sendRequests() {
 				return
 			}
 		}(client)
-		log.Println("SPAWNED GO ROUTINE FOR REQUEST", client)
 	}
 
 	n.WaitForOkay() //wait for ok from all other nodes. When continuing, it means that it is allowed to enter the Critical Section
