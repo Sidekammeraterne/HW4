@@ -8,9 +8,8 @@ import (
 	"log" //logs - used to keep track of messages
 	"math/rand"
 	"net" //make connection to net
-	"os"
+	"os"  //terminal input
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -38,7 +37,7 @@ type Node struct {
 type Config struct { //configuration for command-line setup, used for id and port-handling
 	ID         int32
 	Port       string
-	OtherPorts []string //the other clients ports comma-seperated //todo: rename?
+	OtherPorts []string //the other clients ports comma-seperated
 }
 
 // flag for setting up a new id, ports etc. Part of Config struct
@@ -60,7 +59,7 @@ func configurationSetup() Config {
 
 func main() {
 	configuration := configurationSetup()
-	firstLogging := configuration.ID == 1 //todo. make sure first node has id 1
+	firstLogging := configuration.ID == 1 //for logfile purposes
 	setupLogging(firstLogging)
 	log.Println("Configuration setup complete")
 
@@ -89,18 +88,16 @@ func main() {
 			Node: &n, //pointer to the node object in the server
 		}
 		server.startServer(configuration.Port)
-		log.Printf("DEBUG - ID=%d Port=%s", configuration.ID, configuration.Port) //todo delete debug
 	}()
 
-	//wait for the server to start //todo: this does not work - if you are really fast a opening the different terminals it might work
-	log.Println("Started sleeping")
-	time.Sleep(120 * time.Second) //todo: delete only inserted for debugging
-	log.Println("Stopped sleeping")
+	//wait for the server to start
+	time.Sleep(60 * time.Second)
 
 	//configure the nodes reference to the other nodes in the system
 	n.setupNodes(configuration)
 	//starts this node
-	go n.nodeBehavior() //todo: when should it return? Should we be able to stop it?
+	n.nodeBehavior()
+
 }
 
 func (n *Node) setupNodes(configuration Config) {
@@ -117,7 +114,7 @@ func (n *Node) setupNodes(configuration Config) {
 		n.OtherNodes[clientAddress] = client
 		log.Println("ADDING TO OTHER NODES", clientAddress, client)
 	}
-	log.Printf("Completed list of other nodes")
+	log.Printf("Completed list of other nodes, total: %v", len(n.OtherNodes))
 }
 
 func (n *Node) nodeBehavior() {
@@ -160,6 +157,7 @@ func (s *NodeServer) startServer(port string) {
 // utility method that compares the received lamport clock with the local one and updates it if the received one is higher
 func (n *Node) updateLamportOnReceive(remoteLamport int32) int32 {
 	if remoteLamport > n.Lamport {
+		log.Printf("As my Lamport (%v) is lower than theirs (%v), I set my Lamport to (%v)", n.Lamport, remoteLamport, remoteLamport)
 		n.Lamport = remoteLamport
 	}
 	n.incrementLamportClock()
@@ -192,20 +190,15 @@ func setupLogging(firstTime bool) {
 // sendRequests sends a request to all the other nodes in the system, requesting access to the critical section
 func (n *Node) sendRequests() {
 	n.State = "WANTED"
+	log.Println("State change: WANTED")
 	n.incrementLamportClock() //as it is about to send the request
 	n.LamportRequest = n.Lamport
 
-	//The WaitGroup keeps track of how many go routines are running
-	wg := new(sync.WaitGroup)
-
 	//Sends enter() request to all the other nodes in the system
 	for _, client := range n.OtherNodes {
-		wg.Add(1)
-		//go n.sendRequest(client, wg)
 		go func(client proto.RicartArgawalaClient) {
-			defer wg.Done() //Tells the WaitGroup to decrement the group with one when the go routine is done
-			log.Printf("Sending request EnterRequest to %v", client)
-			_, err := client.EnterRequest(context.Background(), n.getClientInfo()) //todo: this is where the program tends to fail because of issues with contacting the server of the of the other nodes
+			log.Printf("Sending request EnterRequest to %v with the Lamport Timestamp %v", client, n.LamportRequest)
+			_, err := client.EnterRequest(context.Background(), n.getClientInfo())
 			if err != nil {
 				log.Printf("Failed to send reuquest %v", err)
 				return
@@ -214,27 +207,33 @@ func (n *Node) sendRequests() {
 		log.Println("SPAWNED GO ROUTINE FOR REQUEST", client)
 	}
 
-	wg.Wait() //waits for the go routines to terminate, will continue when all requests have been received
-
 	n.WaitForOkay() //wait for ok from all other nodes. When continuing, it means that it is allowed to enter the Critical Section
 }
 
 // EnterRequest simulates behavior of node receiving an EnterRequest() by either putting the requestee in a queue or replying okay.
 func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto.Empty, error) {
+	log.Printf("Received request from %v with Lamport timestamp %d", in.Id, in.LamportClock)
 	s.Node.updateLamportOnReceive(in.LamportClock) //updates the local lamport clock on receiving the reply and increments it
 
 	switch {
 	case s.Node.State == "HELD":
 		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
-	case s.Node.State == "WANTED" && (s.Node.LamportRequest < in.LamportClock || s.Node.LamportRequest == in.LamportClock && s.Node.NodeId < in.Id):
+		log.Printf("Added request from %v to queue as my state is HELD", in.Id)
+	case s.Node.State == "WANTED" && s.Node.LamportRequest < in.LamportClock: // || s.Node.LamportRequest == in.LamportClock && s.Node.NodeId < in.Id):
 		s.Node.Queue = append(s.Node.Queue, in) //puts the requestee in the queue to reply after exiting the critical section itself
+		log.Printf("Added request from %v to queue as my Lamport (%v) is lower than theirs(%v)", in.Id, s.Node.LamportRequest, in.LamportClock)
+	case s.Node.State == "WANTED" && s.Node.LamportRequest == in.LamportClock && s.Node.NodeId < in.Id:
+		s.Node.Queue = append(s.Node.Queue, in)
+		log.Printf("Added request from %v to queue as my Lamport (%v) is equal than theirs(%v), but my ID (%v) is lower than theirs (%v)", in.Id, s.Node.LamportRequest, in.LamportClock, s.Node.NodeId, in.Id)
 	default:
 		s.Node.incrementLamportClock() //as it is about to reply
 		reply := &proto.ReplyOk{
 			NodeID:       s.Node.NodeId,
 			LamportClock: s.Node.Lamport,
 		}
-		_, err := s.Node.Node.ReplyOkay(context.Background(), reply) //todo: replace Node name with something else?
+		var replyclient = s.Node.OtherNodes[in.Address]
+		_, err := replyclient.ReplyOkay(context.Background(), reply)
+		log.Printf("Sent ReplyOkay to %v as their Lamport (%v) is lower than mine (%v)", in.Id, in.LamportClock, s.Node.LamportRequest)
 		if err != nil {
 			log.Printf("Failed to reply okay %v", err)
 			return &proto.Empty{}, err
@@ -247,7 +246,8 @@ func (s *NodeServer) EnterRequest(ctx context.Context, in *proto.Client) (*proto
 func (n *Node) EnterCriticalSection() {
 	n.incrementLamportClock() //as it is about to enter the critical section
 	n.State = "HELD"
-	log.Printf("Node %d is entering the Critical Section\n", n.NodeId)
+	log.Println("State change: HELD")
+	log.Printf("Node %d is entering the Critical Section with the Lamport timestamp (%v) \n", n.NodeId, n.Lamport)
 	time.Sleep(5 * time.Second)
 }
 
@@ -255,27 +255,30 @@ func (n *Node) EnterCriticalSection() {
 // It also sends a reply okay to all the nodes in the queue, then clears the queue.
 func (n *Node) ExitCriticalSection() {
 	n.incrementLamportClock() //as it is about to exit the critical section
-	log.Printf("Node %d is exiting the Critical Section\n", n.NodeId)
+	log.Printf("Node %d is exiting the Critical Section with the Lamport timestamp (%v)\n", n.NodeId, n.Lamport)
 	n.State = "RELEASED"
+	log.Println("State change: RELEASED")
 	n.OkReceived = make(map[int32]bool)
 	for _, queued := range n.Queue {
 		n.incrementLamportClock() //as it is about to reply
 		client := n.OtherNodes[queued.Address]
-		_, err := client.ReplyOkay(context.Background(), &proto.ReplyOk{NodeID: queued.Id, LamportClock: queued.LamportClock})
+		_, err := client.ReplyOkay(context.Background(), &proto.ReplyOk{NodeID: n.NodeId, LamportClock: n.Lamport})
 		if err != nil {
 			log.Printf("Failed to reply ok from queue %v", err)
 			return
 		}
+		log.Printf("Sent ReplyOkay to %v as with my Lamport timestamp being %v, as I just exited the Critical Section\n", queued.Id, n.Lamport)
 	}
 	n.Queue = nil //clears the queue as it should be empty after replying to all nodes on it.
 }
 
 // ReplyOkay handles receiving a reply okay from another node by updating the lamport clock and marking the node as having replied
 func (s *NodeServer) ReplyOkay(ctx context.Context, in *proto.ReplyOk) (*proto.Empty, error) {
+	log.Printf("received OK reply from %v with their Lamport timestamp being %v", in.NodeID, in.LamportClock)
 	s.Node.updateLamportOnReceive(in.LamportClock) //updates the local lamport clock on receiving the reply and increments it
 	s.Node.OkReceived[in.NodeID] = true
+	log.Printf("Received ok: %v, Need ok in total: %v", len(s.Node.OkReceived), len(s.Node.OtherNodes))
 	return &proto.Empty{}, nil
-
 }
 
 // WaitForOkay waits for all nodes to reply okay, then returns
